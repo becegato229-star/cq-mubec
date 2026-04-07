@@ -303,9 +303,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <div class="toast" id="toast"></div>
 
 <script>
+const FORNECEDORES = [
+  { nome: 'JJ LESTE GALVANIZACAO LTDA',        cnpj: '26.412.069/0001-16' },
+  { nome: 'GALVALLE INDUSTRIA E COMERCIO LTDA', cnpj: '12.882.845/0001-37' },
+  { nome: 'ZINCAGEM MORIAH LTDA',               cnpj: '52.335.329/0001-07' },
+];
 let notas = [], notaAtual = null, notasFiltradas = [];
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
+function selecionarFornecedor(nome) {
+  const f = FORNECEDORES.find(x => x.nome === nome);
+  if (f) {
+    notaAtual.fornecedor_galv = f.nome;
+    notaAtual.cnpj_galv = f.cnpj;
+    const inp = document.getElementById('cnpj-forn');
+    if (inp) inp.value = f.cnpj;
+  }
+}
 function setTab(tab) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='github')||(i===1&&tab==='upload')));
   document.getElementById('tab-github').style.display = tab==='github' ? 'block' : 'none';
@@ -420,8 +434,12 @@ function renderEditor() {
         </div>
         <div id="galv-fields" style="display:${n.tem_galvanizacao?'block':'none'}">
           <div class="grid2">
-            <div class="field"><label>Fornecedor</label><input value="${n.fornecedor_galv||''}" onchange="notaAtual.fornecedor_galv=this.value"></div>
-            <div class="field"><label>CNPJ Fornecedor</label><input value="${n.cnpj_galv||''}" onchange="notaAtual.cnpj_galv=this.value"></div>
+            <div class="field"><label>Fornecedor</label>
+              <select onchange="selecionarFornecedor(this.value)">
+                ${FORNECEDORES.map(f=>`<option value="${f.nome}" ${n.fornecedor_galv===f.nome?'selected':''}>${f.nome}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>CNPJ Fornecedor</label><input id="cnpj-forn" value="${n.cnpj_galv||''}" readonly style="background:var(--100);color:var(--400)"></div>
             <div class="field"><label>Passivação</label>
               <select onchange="notaAtual.passivacao=this.value">
                 ${['AZUL','AMARELO','GALVANIZAÇÃO À FOGO'].map(p=>`<option ${n.passivacao===p?'selected':''}>${p}</option>`).join('')}
