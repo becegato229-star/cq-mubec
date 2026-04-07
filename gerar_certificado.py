@@ -10,7 +10,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph,
-    Spacer, Image, HRFlowable
+    Spacer, Image, HRFlowable, KeepTogether
 )
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -245,7 +245,7 @@ def gerar_pdf(dados_nota: dict) -> bytes:
         ('BOTTOMPADDING', (0,0),(-1,-1), 2),
         ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
     ]))
-    story.append(bloco_cli)
+    story.append(KeepTogether(bloco_cli))
     story.append(Spacer(1, 1.5*mm))
 
     # ── Bloco NF ──────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ def gerar_pdf(dados_nota: dict) -> bytes:
         ('BOTTOMPADDING', (0,0),(-1,-1), 2),
         ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
     ]))
-    story.append(bloco_nf)
+    story.append(KeepTogether(bloco_nf))
     story.append(Spacer(1, 3*mm))
 
     # ── Tabela de Itens ───────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ def gerar_pdf(dados_nota: dict) -> bytes:
         ('LEFTPADDING',   (0,0),(-1,-1), 0),
         ('RIGHTPADDING',  (0,0),(-1,-1), 0),
     ]))
-    story.append(tbl_it_wrap)
+    story.append(KeepTogether(tbl_it_wrap))
     story.append(Spacer(1, 3*mm))
 
     # ── Composição Química ────────────────────────────────────────────────────
@@ -407,25 +407,23 @@ def gerar_pdf(dados_nota: dict) -> bytes:
 
     if maior_bitola > 0:
         if maior_bitola <= 23.0:
-            # Apenas tabela até 23mm
-            story.append(build_comp_wrap(
+            story.append(KeepTogether(build_comp_wrap(
                 'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA',
                 build_comp_table(COMP_ATE23),
                 COMP_ATE23['nota']
-            ))
+            )))
         else:
-            # Ambas as tabelas: até 23mm e acima de 23mm
-            story.append(build_comp_wrap(
+            story.append(KeepTogether(build_comp_wrap(
                 'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — ATÉ 23,00 mm',
                 build_comp_table(COMP_ATE23),
                 COMP_ATE23['nota']
-            ))
+            )))
             story.append(Spacer(1, 2*mm))
-            story.append(build_comp_wrap(
+            story.append(KeepTogether(build_comp_wrap(
                 'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — ACIMA DE 23,00 mm',
                 build_comp_table(COMP_ACIMA23),
                 COMP_ACIMA23['nota']
-            ))
+            )))
         story.append(Spacer(1, 3*mm))
 
     # ── Tratamento de Superfície ──────────────────────────────────────────────
@@ -437,54 +435,73 @@ def gerar_pdf(dados_nota: dict) -> bytes:
     galv_txt   = 'SIM' if tem_galv else 'NÃO'
     galv_cor   = VERDE_MUBEC if tem_galv else CINZA_ESCURO
 
-    # Layout: GALVANIZAÇÃO | valor | FORNECEDOR | valor | CAMADA | valor
-    # Merge das 2 linhas em col 0 e col 1 (GALVANIZAÇÃO / SIM + PASSIVAÇÃO / valor)
-    # Para evitar quebra de texto usamos SPAN vertical e rowHeights fixas
-    #
-    # Colunas: [lbl-galv | val-galv | lbl-forn | val-forn | lbl-camada | val-camada]
-    # Larguras: 28 + 18 + 25 + W-118 + 22 + 25 = W (160)
-    cw_ts = [28*mm, 18*mm, 25*mm, W-118*mm, 22*mm, 25*mm]
-    # verificação: 28+18+25+(160-118)+22+25 = 28+18+25+42+22+25 = 160 ✓
+    # Layout simples: 3 blocos lado a lado, cada um com label + valor
+    # Bloco 1: GALVANIZAÇÃO/PASSIVAÇÃO  Bloco 2: FORNECEDOR/CNPJ  Bloco 3: CAMADA
+    # Cada bloco é uma tabela interna 2-linha: [label] / [valor]
+    # Widths: 50mm | W-90mm | 40mm  = W ✓
 
-    ts_rh = [ROW_H, ROW_H]  # 2 linhas de altura fixa
+    def bloco_ts(label1, val1, label2='', val2='', cor1=None):
+        """Bloco com 1 ou 2 pares label/valor empilhados."""
+        rows = [
+            [Paragraph(f'<b>{label1}</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+            [val(str(val1), bold=True, align=TA_CENTER, color=cor1) if cor1
+             else val(str(val1), bold=True)],
+        ]
+        if label2:
+            rows.append([Paragraph(f'<b>{label2}</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))])
+            rows.append([val(str(val2), size=7.5)])
+        return rows
 
-    ts_data = [
-        # Linha 1: GALVANIZAÇÃO | SIM/NÃO | FORNECEDOR | nome-forn | CAMADA | valor-camada
-        [lbl('GALVANIZAÇÃO'),
-         val(galv_txt, bold=True, align=TA_CENTER, color=galv_cor),
-         lbl('FORNECEDOR'),
-         val(forn_nome, size=7.5),
-         lbl('CAMADA'),
-         val(camada, bold=True)],
-        # Linha 2: PASSIVAÇÃO | valor | (span continua forn) | (span) | (vazio) | (vazio)
-        [lbl('PASSIVAÇÃO'),
-         val(passivacao, bold=True, align=TA_CENTER),
-         Paragraph('', _ps()),
-         Paragraph('', _ps()),
-         Paragraph('', _ps()),
-         Paragraph('', _ps())],
-    ]
+    # Monta a tabela principal do tratamento
+    # Colunas: [GALV+PASSIV | FORNECEDOR+CNPJ | CAMADA]
+    col_a = 50*mm
+    col_b = W - 90*mm
+    col_c = 40*mm
 
-    # CNPJ do fornecedor na 2ª linha, col 3 (sob o valor do fornecedor)
-    ts_data[1][3] = val(forn_cnpj, size=7)
+    def mini(label, value, bold=False, color=None, size=8):
+        return Table(
+            [[Paragraph(f'<b>{label}</b>',
+                        _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+             [val(str(value), bold=bold, size=size, color=color)]],
+            colWidths=[None]
+        )
 
-    tbl_ts = Table(ts_data, colWidths=cw_ts, rowHeights=ts_rh)
+    ts_data = [[
+        # Coluna A: GALVANIZAÇÃO / PASSIVAÇÃO
+        Table([
+            [Paragraph('<b>GALVANIZAÇÃO</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO)),
+             Paragraph('<b>PASSIVAÇÃO</b>',   _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+            [val(galv_txt, bold=True, color=galv_cor),
+             val(passivacao, bold=True)],
+        ], colWidths=[col_a*0.5, col_a*0.5]),
+
+        # Coluna B: FORNECEDOR / CNPJ
+        Table([
+            [Paragraph('<b>FORNECEDOR</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+            [val(forn_nome, size=7.5)],
+            [Paragraph('<b>CNPJ</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+            [val(forn_cnpj, size=7.5)],
+        ], colWidths=[col_b]),
+
+        # Coluna C: CAMADA
+        Table([
+            [Paragraph('<b>CAMADA</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+            [val(camada, bold=True, align=TA_CENTER)],
+        ], colWidths=[col_c]),
+    ]]
+
+    tbl_ts = Table(ts_data, colWidths=[col_a, col_b, col_c])
     tbl_ts.setStyle(TableStyle([
         ('BOX',           (0,0),(-1,-1), 0.5, CINZA_BORDA),
-        ('INNERGRID',     (0,0),(-1,-1), 0.3, CINZA_BORDA),
+        ('LINEBEFORE',    (1,0),(1,0),   0.5, CINZA_BORDA),
+        ('LINEBEFORE',    (2,0),(2,0),   0.5, CINZA_BORDA),
         ('BACKGROUND',    (0,0),(-1,-1), CINZA_CLARO),
-        # Merge col 0 (label GALV sobre label PASSIV ficam separadas — sem merge)
-        # Merge col 4 e 5 da linha 1 com linha 2 (CAMADA ocupa só linha 1)
-        ('SPAN',          (4,0),(5,0)),   # CAMADA label abrange 2 cols na linha 1... não
-        # Correto: merge vertical das cols 4 e 5 NÃO faz sentido; remover
-        ('TOPPADDING',    (0,0),(-1,-1), 3),
-        ('BOTTOMPADDING', (0,0),(-1,-1), 3),
-        ('LEFTPADDING',   (0,0),(-1,-1), 5),
-        ('RIGHTPADDING',  (0,0),(-1,-1), 3),
-        ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
+        ('TOPPADDING',    (0,0),(-1,-1), 5),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 5),
+        ('LEFTPADDING',   (0,0),(-1,-1), 6),
+        ('RIGHTPADDING',  (0,0),(-1,-1), 4),
+        ('VALIGN',        (0,0),(-1,-1), 'TOP'),
         ('LINEABOVE',     (0,0),(-1,0),  1, VERDE_MUBEC),
-        # Sem borda entre linhas 0 e 1 nas colunas 2-3 (FORNECEDOR continua)
-        ('LINEBELOW',     (2,0),(3,0),   0, CINZA_CLARO),
     ]))
 
     tbl_ts_wrap = Table(
@@ -501,7 +518,7 @@ def gerar_pdf(dados_nota: dict) -> bytes:
         ('LEFTPADDING',   (0,0),(-1,-1), 0),
         ('RIGHTPADDING',  (0,0),(-1,-1), 0),
     ]))
-    story.append(tbl_ts_wrap)
+    story.append(KeepTogether(tbl_ts_wrap))
     story.append(Spacer(1, 5*mm))
 
     # ── Declaração ────────────────────────────────────────────────────────────
