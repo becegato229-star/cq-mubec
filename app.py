@@ -490,9 +490,15 @@ def static_files(filename):
 @app.route('/carregar-erp-salvo')
 def carregar_erp_salvo_route():
     try:
+        erp_path = ERP_PATH
+        existe = os.path.exists(erp_path)
+        tamanho = os.path.getsize(erp_path) if existe else 0
+        print(f'[ERP] path={erp_path} existe={existe} tamanho={tamanho}')
+        if not existe or tamanho == 0:
+            return jsonify({'error': f'Arquivo erp_atual.xlsx não encontrado em {erp_path}. Suba o arquivo no GitHub em data/erp_atual.xlsx'}), 404
         notas = carregar_erp_salvo()
         if not notas:
-            return jsonify({'error': 'Arquivo data/erp_atual.xlsx não encontrado. Faça upload manual ou atualize o GitHub.'}), 404
+            return jsonify({'error': 'Arquivo encontrado mas sem notas. Verifique o formato do Excel.'}), 400
         return jsonify({'notas': notas})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -502,11 +508,39 @@ def carregar_erp_salvo_route():
 def upload_erp():
     if 'file' not in request.files:
         return jsonify({'error': 'Nenhum arquivo enviado'}), 400
+    f = request.files['file']
+    fname = f.filename or ''
+    raw = f.read()
+    print(f'[UPLOAD] arquivo={fname} tamanho={len(raw)}')
     try:
-        df = ler_excel_file(request.files['file'])
+        # Tenta xlsx direto
+        if fname.lower().endswith('.xlsx'):
+            df = pd.read_excel(io.BytesIO(raw), engine='openpyxl')
+        else:
+            # Tenta xlrd para .xls
+            try:
+                df = pd.read_excel(io.BytesIO(raw), engine='xlrd')
+            except Exception as e1:
+                print(f'[UPLOAD] xlrd falhou: {e1}')
+                # Tenta LibreOffice
+                try:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        xls_path = os.path.join(tmpdir, 'input.xls')
+                        with open(xls_path, 'wb') as tmp:
+                            tmp.write(raw)
+                        subprocess.run(
+                            ['libreoffice', '--headless', '--convert-to', 'xlsx',
+                             xls_path, '--outdir', tmpdir],
+                            check=True, capture_output=True, timeout=60
+                        )
+                        df = pd.read_excel(os.path.join(tmpdir, 'input.xlsx'), engine='openpyxl')
+                except Exception as e2:
+                    print(f'[UPLOAD] LibreOffice falhou: {e2}')
+                    return jsonify({'error': f'Não foi possível ler o arquivo .xls. Converta para .xlsx no Excel e faça upload novamente.'}), 400
         notas = parse_erp_df(df)
         if not notas:
-            return jsonify({'error': 'Nenhuma nota encontrada'}), 400
+            return jsonify({'error': 'Nenhuma nota encontrada no arquivo.'}), 400
+        print(f'[UPLOAD] {len(notas)} notas carregadas')
         return jsonify({'notas': notas})
     except Exception as e:
         import traceback; traceback.print_exc()
