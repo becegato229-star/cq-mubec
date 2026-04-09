@@ -114,7 +114,7 @@ def carregar_dados_base():
                 bitola_specs[prim_m] = {'fpp': passo, 'kgf': round(kgf_m, 2)}
         except: pass
     return clientes, produtos, forns[:3], \
-           ['8 MICRA','13 MICRA','16 MICRA'], \
+           ['8 MICRA','13 MICRA','16 MICRA','NBR 6313'], \
            ['AZUL','AMARELO','GALVANIZAÇÃO À FOGO'], \
            bitola_specs
 

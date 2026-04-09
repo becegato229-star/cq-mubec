@@ -461,7 +461,7 @@ function renderBanhos(banhos) {
         </div>
         <div class="field"><label>Camada</label>
           <select onchange="atualizarBanho(${i},'camada',this.value)">
-            ${['8 MICRA','13 MICRA','16 MICRA'].map(c=>`<option ${b.camada===c?'selected':''}>${c}</option>`).join('')}
+            ${['8 MICRA','13 MICRA','16 MICRA','NBR 6313'].map(c=>`<option ${b.camada===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
       </div>
