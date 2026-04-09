@@ -428,73 +428,69 @@ def gerar_pdf(dados_nota: dict) -> bytes:
 
     # ── Tratamento de Superfície ──────────────────────────────────────────────
     tem_galv   = dados_nota.get('tem_galvanizacao', False)
-    forn_nome  = dados_nota.get('fornecedor_galv', '') if tem_galv else '-'
-    forn_cnpj  = dados_nota.get('cnpj_galv', '')       if tem_galv else '-'
-    passivacao = dados_nota.get('passivacao', '')       if tem_galv else '-'
-    camada     = dados_nota.get('camada', '')           if tem_galv else '-'
     galv_txt   = 'SIM' if tem_galv else 'NÃO'
     galv_cor   = VERDE_MUBEC if tem_galv else CINZA_ESCURO
 
-    # Layout simples: 3 blocos lado a lado, cada um com label + valor
-    # Bloco 1: GALVANIZAÇÃO/PASSIVAÇÃO  Bloco 2: FORNECEDOR/CNPJ  Bloco 3: CAMADA
-    # Cada bloco é uma tabela interna 2-linha: [label] / [valor]
-    # Widths: 50mm | W-90mm | 40mm  = W ✓
+    # Suporta múltiplos banhos: banhos = lista de {fornecedor, cnpj, passivacao, camada}
+    # Para compatibilidade, se só tiver os campos simples monta lista de 1
+    banhos = dados_nota.get('banhos', [])
+    if not banhos and tem_galv:
+        banhos = [{
+            'fornecedor_galv': dados_nota.get('fornecedor_galv', ''),
+            'cnpj_galv':       dados_nota.get('cnpj_galv', ''),
+            'passivacao':      dados_nota.get('passivacao', ''),
+            'camada':          dados_nota.get('camada', ''),
+        }]
 
-    def bloco_ts(label1, val1, label2='', val2='', cor1=None):
-        """Bloco com 1 ou 2 pares label/valor empilhados."""
-        rows = [
-            [Paragraph(f'<b>{label1}</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-            [val(str(val1), bold=True, align=TA_CENTER, color=cor1) if cor1
-             else val(str(val1), bold=True)],
-        ]
-        if label2:
-            rows.append([Paragraph(f'<b>{label2}</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))])
-            rows.append([val(str(val2), size=7.5)])
-        return rows
-
-    # Monta a tabela principal do tratamento
-    # Colunas: [GALV+PASSIV | FORNECEDOR+CNPJ | CAMADA]
     col_a = 50*mm
     col_b = W - 90*mm
     col_c = 40*mm
 
-    def mini(label, value, bold=False, color=None, size=8):
-        return Table(
-            [[Paragraph(f'<b>{label}</b>',
-                        _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-             [val(str(value), bold=bold, size=size, color=color)]],
-            colWidths=[None]
-        )
+    def linha_banho(banho, primeiro=False):
+        """Monta uma linha da tabela para um banho."""
+        forn  = banho.get('fornecedor_galv', '-') if tem_galv else '-'
+        cnpj  = banho.get('cnpj_galv', '-')       if tem_galv else '-'
+        passy = banho.get('passivacao', '-')       if tem_galv else '-'
+        cam   = banho.get('camada', '-')           if tem_galv else '-'
 
-    ts_data = [[
-        # Coluna A: GALVANIZAÇÃO / PASSIVAÇÃO
-        Table([
-            [Paragraph('<b>GALVANIZAÇÃO</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO)),
-             Paragraph('<b>PASSIVAÇÃO</b>',   _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-            [val(galv_txt, bold=True, color=galv_cor),
-             val(passivacao, bold=True)],
-        ], colWidths=[col_a*0.5, col_a*0.5]),
+        return [
+            # Col A: GALVANIZAÇÃO / PASSIVAÇÃO
+            Table([
+                [Paragraph('<b>GALVANIZAÇÃO</b>' if primeiro else '',
+                           _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO)),
+                 Paragraph('<b>PASSIVAÇÃO</b>',
+                           _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+                [val(galv_txt if primeiro else '', bold=True, color=galv_cor if primeiro else None),
+                 val(passy, bold=True)],
+            ], colWidths=[col_a*0.5, col_a*0.5]),
 
-        # Coluna B: FORNECEDOR / CNPJ
-        Table([
-            [Paragraph('<b>FORNECEDOR</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-            [val(forn_nome, size=7.5)],
-            [Paragraph('<b>CNPJ</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-            [val(forn_cnpj, size=7.5)],
-        ], colWidths=[col_b]),
+            # Col B: FORNECEDOR / CNPJ
+            Table([
+                [Paragraph('<b>FORNECEDOR</b>',
+                           _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+                [val(forn, size=7.5)],
+                [Paragraph('<b>CNPJ</b>',
+                           _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+                [val(cnpj, size=7.5)],
+            ], colWidths=[col_b]),
 
-        # Coluna C: CAMADA
-        Table([
-            [Paragraph('<b>CAMADA</b>', _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
-            [val(camada, bold=True, align=TA_CENTER)],
-        ], colWidths=[col_c]),
-    ]]
+            # Col C: CAMADA
+            Table([
+                [Paragraph('<b>CAMADA</b>',
+                           _ps(fontSize=7, fontName='Helvetica-Bold', textColor=CINZA_MEDIO))],
+                [val(cam, bold=True, align=TA_CENTER)],
+            ], colWidths=[col_c]),
+        ]
 
-    tbl_ts = Table(ts_data, colWidths=[col_a, col_b, col_c])
-    tbl_ts.setStyle(TableStyle([
+    if tem_galv and banhos:
+        ts_rows = [linha_banho(b, primeiro=(i==0)) for i, b in enumerate(banhos)]
+    else:
+        ts_rows = [linha_banho({}, primeiro=True)]
+
+    ts_style = [
         ('BOX',           (0,0),(-1,-1), 0.5, CINZA_BORDA),
-        ('LINEBEFORE',    (1,0),(1,0),   0.5, CINZA_BORDA),
-        ('LINEBEFORE',    (2,0),(2,0),   0.5, CINZA_BORDA),
+        ('LINEBEFORE',    (1,0),(1,-1),  0.5, CINZA_BORDA),
+        ('LINEBEFORE',    (2,0),(2,-1),  0.5, CINZA_BORDA),
         ('BACKGROUND',    (0,0),(-1,-1), CINZA_CLARO),
         ('TOPPADDING',    (0,0),(-1,-1), 5),
         ('BOTTOMPADDING', (0,0),(-1,-1), 5),
@@ -502,7 +498,13 @@ def gerar_pdf(dados_nota: dict) -> bytes:
         ('RIGHTPADDING',  (0,0),(-1,-1), 4),
         ('VALIGN',        (0,0),(-1,-1), 'TOP'),
         ('LINEABOVE',     (0,0),(-1,0),  1, VERDE_MUBEC),
-    ]))
+    ]
+    # Linha separadora entre banhos
+    for i in range(1, len(ts_rows)):
+        ts_style.append(('LINEABOVE', (0,i), (-1,i), 0.5, CINZA_BORDA))
+
+    tbl_ts = Table(ts_rows, colWidths=[col_a, col_b, col_c])
+    tbl_ts.setStyle(TableStyle(ts_style))
 
     tbl_ts_wrap = Table(
         [[sec_title('TRATAMENTO DE SUPERFÍCIE')],

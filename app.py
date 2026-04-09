@@ -311,15 +311,7 @@ const FORNECEDORES = [
 let notas = [], notaAtual = null, notasFiltradas = [];
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
-function selecionarFornecedor(nome) {
-  const f = FORNECEDORES.find(x => x.nome === nome);
-  if (f) {
-    notaAtual.fornecedor_galv = f.nome;
-    notaAtual.cnpj_galv = f.cnpj;
-    const inp = document.getElementById('cnpj-forn');
-    if (inp) inp.value = f.cnpj;
-  }
-}
+
 function setTab(tab) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='github')||(i===1&&tab==='upload')));
   document.getElementById('tab-github').style.display = tab==='github' ? 'block' : 'none';
@@ -433,24 +425,10 @@ function renderEditor() {
           </div>
         </div>
         <div id="galv-fields" style="display:${n.tem_galvanizacao?'block':'none'}">
-          <div class="grid2">
-            <div class="field"><label>Fornecedor</label>
-              <select onchange="selecionarFornecedor(this.value)">
-                ${FORNECEDORES.map(f=>`<option value="${f.nome}" ${n.fornecedor_galv===f.nome?'selected':''}>${f.nome}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field"><label>CNPJ Fornecedor</label><input id="cnpj-forn" value="${n.cnpj_galv||''}" readonly style="background:var(--100);color:var(--400)"></div>
-            <div class="field"><label>Passivação</label>
-              <select onchange="notaAtual.passivacao=this.value">
-                ${['AZUL','AMARELO','GALVANIZAÇÃO À FOGO'].map(p=>`<option ${n.passivacao===p?'selected':''}>${p}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field"><label>Camada</label>
-              <select onchange="notaAtual.camada=this.value">
-                ${['8 MICRA','13 MICRA','16 MICRA'].map(c=>`<option ${n.camada===c?'selected':''}>${c}</option>`).join('')}
-              </select>
-            </div>
+          <div id="banhos-lista">
+            ${renderBanhos(n.banhos||[{fornecedor_galv:n.fornecedor_galv||'',cnpj_galv:n.cnpj_galv||'',passivacao:n.passivacao||'AMARELO',camada:n.camada||'16 MICRA'}])}
           </div>
+          <button class="btn btn-ghost" style="margin-top:10px;font-size:12px" onclick="adicionarBanho()">+ Adicionar banho</button>
         </div>
       </div>
     </div>
@@ -458,6 +436,68 @@ function renderEditor() {
       <button class="btn btn-ghost" onclick="resetNote()">↩ Resetar</button>
       <button class="btn btn-primary" id="btn-gerar" onclick="gerarPDF()">📄 Gerar Certificado PDF</button>
     </div>`;
+}
+
+function renderBanhos(banhos) {
+  // Garante que notaAtual.banhos está sincronizado
+  notaAtual.banhos = banhos;
+  return banhos.map((b, i) => `
+    <div class="banho-item" style="border:1.5px solid var(--200);border-radius:8px;padding:12px;margin-bottom:8px;position:relative;">
+      ${banhos.length > 1 ? `<button onclick="removerBanho(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--400);font-size:16px;" title="Remover">×</button>` : ''}
+      ${banhos.length > 1 ? `<div style="font-size:10px;font-weight:700;color:var(--400);letter-spacing:.08em;margin-bottom:8px;">BANHO ${i+1}</div>` : ''}
+      <div class="grid2">
+        <div class="field"><label>Fornecedor</label>
+          <select onchange="atualizarBanho(${i},'fornecedor',this.value)">
+            ${FORNECEDORES.map(f=>`<option value="${f.nome}" ${b.fornecedor_galv===f.nome?'selected':''}>${f.nome}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>CNPJ Fornecedor</label>
+          <input id="cnpj-forn-${i}" value="${b.cnpj_galv||''}" readonly style="background:var(--100);color:var(--400)">
+        </div>
+        <div class="field"><label>Passivação</label>
+          <select onchange="atualizarBanho(${i},'passivacao',this.value)">
+            ${['AZUL','AMARELO','GALVANIZAÇÃO À FOGO'].map(p=>`<option ${b.passivacao===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Camada</label>
+          <select onchange="atualizarBanho(${i},'camada',this.value)">
+            ${['8 MICRA','13 MICRA','16 MICRA'].map(c=>`<option ${b.camada===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function atualizarBanho(idx, campo, valor) {
+  if (!notaAtual.banhos) notaAtual.banhos = [];
+  if (!notaAtual.banhos[idx]) notaAtual.banhos[idx] = {};
+  if (campo === 'fornecedor') {
+    const f = FORNECEDORES.find(x => x.nome === valor);
+    notaAtual.banhos[idx].fornecedor_galv = valor;
+    notaAtual.banhos[idx].cnpj_galv = f ? f.cnpj : '';
+    const inp = document.getElementById(`cnpj-forn-${idx}`);
+    if (inp) inp.value = notaAtual.banhos[idx].cnpj_galv;
+  } else if (campo === 'passivacao') {
+    notaAtual.banhos[idx].passivacao = valor;
+  } else if (campo === 'camada') {
+    notaAtual.banhos[idx].camada = valor;
+  }
+}
+
+function adicionarBanho() {
+  if (!notaAtual.banhos) notaAtual.banhos = [];
+  notaAtual.banhos.push({
+    fornecedor_galv: 'JJ LESTE GALVANIZACAO LTDA',
+    cnpj_galv: '26.412.069/0001-16',
+    passivacao: 'AMARELO',
+    camada: '16 MICRA',
+  });
+  document.getElementById('banhos-lista').innerHTML = renderBanhos(notaAtual.banhos);
+}
+
+function removerBanho(idx) {
+  notaAtual.banhos.splice(idx, 1);
+  document.getElementById('banhos-lista').innerHTML = renderBanhos(notaAtual.banhos);
 }
 
 function toggleGalv(el) {
