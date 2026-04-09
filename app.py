@@ -13,9 +13,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ERP_PATH = os.path.join(BASE_DIR, 'data', 'erp_atual.xlsx')
 
 _dados_base = None
-def get_dados_base():
+def get_dados_base(forcar=False):
     global _dados_base
-    if _dados_base is None:
+    if _dados_base is None or forcar:
         _dados_base = carregar_dados_base()
     return _dados_base
 
@@ -554,9 +554,12 @@ def carregar_erp_salvo_route():
         print(f'[ERP] path={erp_path} existe={existe} tamanho={tamanho}')
         if not existe or tamanho == 0:
             return jsonify({'error': f'Arquivo erp_atual.xlsx não encontrado em {erp_path}. Suba o arquivo no GitHub em data/erp_atual.xlsx'}), 404
+        # Força recarregamento dos dados base e do ERP a cada clique
+        get_dados_base(forcar=True)
         notas = carregar_erp_salvo()
         if not notas:
             return jsonify({'error': 'Arquivo encontrado mas sem notas. Verifique o formato do Excel.'}), 400
+        print(f'[ERP] {len(notas)} notas carregadas')
         return jsonify({'notas': notas})
     except Exception as e:
         import traceback; traceback.print_exc()
