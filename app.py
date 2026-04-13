@@ -1,7 +1,7 @@
 """
 App Flask - Sistema de Certificado de Qualidade MUBEC
 """
-import os, io, subprocess, tempfile
+import os, io, subprocess, tempfile, requests
 import pandas as pd
 from flask import Flask, request, jsonify, send_file, render_template_string
 from gerar_certificado import gerar_pdf, carregar_dados_base
@@ -144,10 +144,27 @@ def parse_erp_df(df):
 
 
 def carregar_erp_salvo():
-    """Carrega o ERP que está salvo em data/erp_atual.xlsx (atualizado via GitHub)."""
+    """Busca o ERP direto do GitHub (sempre a versão mais recente) ou do disco como fallback."""
+    github_url = os.environ.get('GITHUB_ERP_URL', '')
+    
+    if github_url:
+        # Busca direto do GitHub raw — sempre atualizado
+        try:
+            print(f'[ERP] Buscando do GitHub: {github_url}')
+            resp = requests.get(github_url, timeout=15)
+            resp.raise_for_status()
+            df = pd.read_excel(io.BytesIO(resp.content), engine='openpyxl')
+            print(f'[ERP] GitHub OK: {len(df)} linhas')
+            return parse_erp_df(df)
+        except Exception as e:
+            print(f'[ERP] GitHub falhou ({e}), tentando disco...')
+    
+    # Fallback: arquivo no disco
     if os.path.exists(ERP_PATH):
+        print(f'[ERP] Lendo do disco: {ERP_PATH}')
         df = pd.read_excel(ERP_PATH, engine='openpyxl')
         return parse_erp_df(df)
+    
     return []
 
 
