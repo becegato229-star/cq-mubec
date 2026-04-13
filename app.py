@@ -151,9 +151,7 @@ def carregar_erp_salvo():
         # Busca direto do GitHub raw — sempre atualizado
         try:
             print(f'[ERP] Buscando do GitHub: {github_url}')
-            github_token = os.environ.get('GITHUB_TOKEN', '')
-            headers = {'Authorization': f'token {github_token}'} if github_token else {}
-            resp = requests.get(github_url, headers=headers, timeout=15)
+            resp = requests.get(github_url, timeout=15)
             resp.raise_for_status()
             df = pd.read_excel(io.BytesIO(resp.content), engine='openpyxl')
             print(f'[ERP] GitHub OK: {len(df)} linhas')
