@@ -114,7 +114,7 @@ def carregar_dados_base():
                 bitola_specs[prim_m] = {'fpp': passo, 'kgf': round(kgf_m, 2)}
         except: pass
     return clientes, produtos, forns[:3], \
-           ['8 MICRA','13 MICRA','16 MICRA','NBR 6313'], \
+           ['8 MICRA','13 MICRA','16 MICRA','NBR 6323'], \
            ['AZUL','AMARELO','GALVANIZAÇÃO À FOGO'], \
            bitola_specs
 
@@ -527,7 +527,7 @@ def gerar_pdf(dados_nota: dict) -> bytes:
     story.append(Paragraph(
         'Certifico o envio do produto acima, através da Nota Fiscal em referência. '
         'Material produzido e inspecionado de acordo com todas as exigências técnicas '
-        'e especificações da norma NBR 6313.',
+        'e especificações da norma NBR 6323.',
         _ps(fontSize=8, textColor=CINZA_ESCURO,
             alignment=TA_CENTER, fontName='Helvetica-Oblique')
     ))
