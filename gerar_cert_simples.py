@@ -7,9 +7,12 @@ from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
     Spacer, Image, HRFlowable, KeepTogether)
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+import pandas as pd
 
-LOGO_PATH  = '/home/claude/logo.png'
-ASSIN_PATH = '/home/claude/assinatura.png'
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+LOGO_PATH  = os.path.join(BASE_DIR, 'static', 'logo.png')
+ASSIN_PATH = os.path.join(BASE_DIR, 'static', 'assinatura.png')
+PLANILHA_PATH = os.path.join(BASE_DIR, 'data', 'planilha_base.xlsx')
 VERDE=colors.HexColor('#3DDC84'); PRETO=colors.HexColor('#1A1A1A')
 C_ESC=colors.HexColor('#2D2D2D'); C_MED=colors.HexColor('#555555')
 C_CLA=colors.HexColor('#F5F5F5'); C_BOR=colors.HexColor('#DDDDDD'); BRAN=colors.white
@@ -33,15 +36,12 @@ def fmt(v):
         f=float(v); return f'{f:g}' if f!=int(f) else str(int(f))
     except: return str(v)
 
-# ── Composições por fornecedor ────────────────────────────────────────────────
-# GERDAU (Certificado_1) — bitolas até ~11mm primitivo
 COMP_GERDAU = {
     'fornecedor': 'GERDAU',
     'cols': ['%C', '%Mn', '%Si', '%P', '%S', '%Cu'],
     'vals': ['0,06', '0,45', '0,12', '0,017', '0,008', '0,01'],
     'nota': 'Composição referente ao Certificado de Qualidade GERDAU (FIO MÁQUINA)',
 }
-# SIMEC (Certificado_2) — bitolas a partir de ~12,7mm primitivo
 COMP_SIMEC = {
     'fornecedor': 'SIMEC',
     'cols': ['%C', '%Mn', '%Si', '%P', '%S', '%Nb', '%Cu', '%Cr', '%Ni'],
@@ -49,26 +49,22 @@ COMP_SIMEC = {
     'nota': 'Composição referente ao Certificado de Qualidade SIMEC (FIO MÁQUINA)',
 }
 
-# Mapeamento primitivo_mm -> {cert, forn} carregado da planilha_base
-import pandas as pd
 _bitola_cache = None
 def get_bitola_info():
     global _bitola_cache
     if _bitola_cache is not None:
         return _bitola_cache
-    planilha = '/home/claude/planilha_base.xlsx'
+    planilha = PLANILHA_PATH
     xls = pd.read_excel(planilha, sheet_name=None, engine='openpyxl')
     df_sup = xls.get('SUPORTE', pd.DataFrame())
     info = {}
     for _, row in df_sup.iloc[14:].iterrows():
-        # Lado esquerdo
         try:
             p=float(row.iloc[4]); f=float(row.iloc[2]); k=float(row.iloc[1])
             c=str(row.iloc[5]).strip(); fn=str(row.iloc[6]).strip()
             if p>0 and c not in ('nan',''):
                 info[p]={'fpp':f,'kgf':round(k,2),'cert':c,'fornecedor':fn}
         except: pass
-        # Lado direito (métrico)
         try:
             p=float(row.iloc[12]); f=float(row.iloc[10]); k=float(row.iloc[9])
             c=str(row.iloc[13]).strip(); fn=str(row.iloc[14]).strip()
@@ -79,7 +75,6 @@ def get_bitola_info():
     return info
 
 def get_comp_por_bitola(fm):
-    """Retorna a composição correta baseada no primitivo (fm) do item."""
     try:
         prim = float(fm)
     except:
@@ -92,7 +87,6 @@ def get_comp_por_bitola(fm):
             return COMP_GERDAU
         else:
             return COMP_SIMEC
-    # Fallback por threshold
     return COMP_GERDAU if prim <= 11.0 else COMP_SIMEC
 
 def gerar(dados):
@@ -143,9 +137,7 @@ def gerar(dados):
         story.append(KeepTogether(build_items_wrap('ITENS DA NOTA FISCAL',itens)))
     story.append(Spacer(1,3*mm))
 
-    # ── Composição Química — por fornecedor/certificado ───────────────────────
-    # Determina quais composições mostrar com base nos itens
-    comps_usadas = {}  # cert -> comp
+    comps_usadas = {}
     for it in itens:
         fm = it.get('fm','')
         if not fm: continue
@@ -166,7 +158,6 @@ def gerar(dados):
         w.setStyle(TableStyle([('BACKGROUND',(0,0),(0,0),C_ESC),('TOPPADDING',(0,0),(0,0),4),('BOTTOMPADDING',(0,0),(0,0),4),('TOPPADDING',(0,1),(0,1),0),('BOTTOMPADDING',(0,1),(0,1),0),('TOPPADDING',(0,2),(0,2),2),('BOTTOMPADDING',(0,2),(0,2),0),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
         return w
 
-    # Ordem preferencial: GERDAU primeiro, SIMEC depois
     ordem = ['GERDAU','SIMEC']
     for forn in ordem:
         if forn in comps_usadas:
@@ -175,7 +166,6 @@ def gerar(dados):
             story.append(KeepTogether(build_wrap_comp(titulo, build_comp(comp), comp['nota'])))
             story.append(Spacer(1,3*mm))
 
-    # ── Tratamento de Superfície ──────────────────────────────────────────────
     tem_galv=dados.get('tem_galvanizacao',True)
     galv_cor=VERDE if tem_galv else C_ESC
     banhos=dados.get('banhos',[])
