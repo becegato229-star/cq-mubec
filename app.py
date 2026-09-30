@@ -622,6 +622,7 @@ function renderCompSections(sections){
       </div>
       <div class="field" style="margin-bottom:8px"><label>Colunas (separadas por ; — termine com "HEAT NUMBER" se for incluir a corrida)</label>
         <input value="${(cs.colsTxt||'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER').replace(/"/g,'&quot;')}" onchange="atualizarCompSection(${i},'colsTxt',this.value)">
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${renderColChips(i, cs.colsTxt||'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER')}</div>
       </div>
       <div class="field" style="margin-bottom:8px"><label>Valores da linha (mesma ordem das colunas, separados por ;)</label>
         <input value="${(cs.rowTxt||'').replace(/"/g,'&quot;')}" placeholder="0,06; 0,45; 0,12; 0,017; 0,008; 0,01; 2815524133" onchange="atualizarCompSection(${i},'rowTxt',this.value)">
@@ -630,6 +631,33 @@ function renderCompSections(sections){
         <input value="${(cs.nota||'').replace(/"/g,'&quot;')}" placeholder="Gerdau — Fio Máquina 9,00mm, grau 1006F, NF ... de .../2025." onchange="atualizarCompSection(${i},'nota',this.value)">
       </div>
     </div>`).join('');
+}
+const COMP_COL_CHIPS=['C','Mn','Si','P','S','Cu','Cr','Ni','Mo','Al','V','HEAT NUMBER'];
+function renderColChips(idx, colsTxt){
+  const atuais=(colsTxt||'').split(';').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  return COMP_COL_CHIPS.map(c=>{
+    const label=c==='HEAT NUMBER'?'HEAT NUMBER':'%'+c;
+    const ativo=atuais.includes(label.toUpperCase());
+    const bg=ativo?'var(--brand,#0a8a5f)':'var(--100,#f2f2f2)';
+    const fg=ativo?'#fff':'var(--600,#333)';
+    return `<button type="button" onclick="toggleCompCol(${idx},'${c}')" style="border:none;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;background:${bg};color:${fg}">${label}</button>`;
+  }).join('');
+}
+function toggleCompCol(idx, col){
+  const cs=notaAtual.comp_sections[idx];
+  const label=col==='HEAT NUMBER'?'HEAT NUMBER':'%'+col;
+  let cols=(cs.colsTxt||'').split(';').map(s=>s.trim()).filter(Boolean);
+  const existeIdx=cols.findIndex(c=>c.toUpperCase()===label.toUpperCase());
+  if(existeIdx>=0){
+    cols.splice(existeIdx,1);
+  }else if(label==='HEAT NUMBER'){
+    cols.push(label);
+  }else{
+    const hnIdx=cols.findIndex(c=>c.toUpperCase()==='HEAT NUMBER');
+    if(hnIdx>=0)cols.splice(hnIdx,0,label);else cols.push(label);
+  }
+  cs.colsTxt=cols.join('; ');
+  document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
 }
 function atualizarCompSection(idx,campo,valor){
   if(!notaAtual.comp_sections[idx])notaAtual.comp_sections[idx]={};
