@@ -155,10 +155,47 @@ def gerar(dados):
         w.setStyle(TableStyle([('BACKGROUND',(0,0),(0,0),C_ESC),('TOPPADDING',(0,0),(0,0),4),('BOTTOMPADDING',(0,0),(0,0),4),('TOPPADDING',(0,1),(0,1),0),('BOTTOMPADDING',(0,1),(0,1),0),('TOPPADDING',(0,2),(0,2),2),('BOTTOMPADDING',(0,2),(0,2),0),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
         return w
 
+    def build_comp_auto(comp):
+        n=len(comp['cols']); cw=[W/n]*n
+        t=Table([[Paragraph(f'<b>{c}</b>',ps(fontSize=7,fontName='Helvetica-Bold',textColor=BRAN,alignment=TA_CENTER)) for c in comp['cols']],
+                 [Paragraph(f'<b>{v}</b>',ps(fontSize=8,fontName='Helvetica-Bold',textColor=PRETO,alignment=TA_CENTER)) for v in comp['vals']]],
+                colWidths=cw,rowHeights=[6.5*mm,ROW_H])
+        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),C_ESC),('BACKGROUND',(0,1),(-1,1),C_CLA),('BOX',(0,0),(-1,-1),0.5,C_BOR),('INNERGRID',(0,0),(-1,-1),0.3,C_BOR),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('LEFTPADDING',(0,0),(-1,-1),1),('RIGHTPADDING',(0,0),(-1,-1),1),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEABOVE',(0,0),(-1,0),1,VERDE)]))
+        return t
+
+    def adicionar_tabelas_auto(lista_itens):
+        # ── Composição genérica GERDAU/SIMEC por fornecedor, detectada pela
+        # bitola dos itens informados (comportamento original do site).
+        comps_usadas = {}
+        for it in lista_itens:
+            fm = it.get('fm','')
+            if not fm: continue
+            comp = get_comp_por_bitola(fm)
+            if comp:
+                comps_usadas[comp['fornecedor']] = comp
+        ordem = ['GERDAU','SIMEC']
+        for forn in ordem:
+            if forn in comps_usadas:
+                comp = comps_usadas[forn]
+                titulo = f'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — {forn}'
+                story.append(KeepTogether(build_wrap_comp(titulo, build_comp_auto(comp), comp['nota'])))
+                story.append(Spacer(1,3*mm))
+
     comp_sections = dados.get('comp_sections')
     if comp_sections:
         # ── Modo manual: uma ou mais tabelas (uma por item/fornecedor), cada
         # uma com colunas e valores livres, e HEAT NUMBER opcional por linha.
+        # Cada tabela pode dizer a quais itens da nota ela se aplica (por
+        # índice, em 'itens'); os itens não cobertos por nenhuma tabela
+        # manual continuam usando a composição genérica automática abaixo —
+        # uma tabela manual nunca apaga a informação dos outros itens.
+        itens_cobertos = set()
+        for cs in comp_sections:
+            for idx in cs.get('itens', []) or []:
+                try:
+                    itens_cobertos.add(int(idx))
+                except (TypeError, ValueError):
+                    pass
         for cs in comp_sections:
             cols = list(cs.get('cols', []))
             rows_vals = cs.get('rows', [])
@@ -185,32 +222,13 @@ def gerar(dados):
             nota = cs.get('nota','')
             story.append(KeepTogether(build_wrap_comp(titulo, t, nota)))
             story.append(Spacer(1,3*mm))
+        itens_restantes = [it for i, it in enumerate(itens) if i not in itens_cobertos]
+        if itens_restantes:
+            adicionar_tabelas_auto(itens_restantes)
     else:
-        # ── Modo automático (comportamento original): uma tabela genérica
-        # GERDAU ou SIMEC por fornecedor detectado pela bitola dos itens.
-        comps_usadas = {}
-        for it in itens:
-            fm = it.get('fm','')
-            if not fm: continue
-            comp = get_comp_por_bitola(fm)
-            if comp:
-                comps_usadas[comp['fornecedor']] = comp
-
-        def build_comp(comp):
-            n=len(comp['cols']); cw=[W/n]*n
-            t=Table([[Paragraph(f'<b>{c}</b>',ps(fontSize=7,fontName='Helvetica-Bold',textColor=BRAN,alignment=TA_CENTER)) for c in comp['cols']],
-                     [Paragraph(f'<b>{v}</b>',ps(fontSize=8,fontName='Helvetica-Bold',textColor=PRETO,alignment=TA_CENTER)) for v in comp['vals']]],
-                    colWidths=cw,rowHeights=[6.5*mm,ROW_H])
-            t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),C_ESC),('BACKGROUND',(0,1),(-1,1),C_CLA),('BOX',(0,0),(-1,-1),0.5,C_BOR),('INNERGRID',(0,0),(-1,-1),0.3,C_BOR),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('LEFTPADDING',(0,0),(-1,-1),1),('RIGHTPADDING',(0,0),(-1,-1),1),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEABOVE',(0,0),(-1,0),1,VERDE)]))
-            return t
-
-        ordem = ['GERDAU','SIMEC']
-        for forn in ordem:
-            if forn in comps_usadas:
-                comp = comps_usadas[forn]
-                titulo = f'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — {forn}'
-                story.append(KeepTogether(build_wrap_comp(titulo, build_comp(comp), comp['nota'])))
-                story.append(Spacer(1,3*mm))
+        # ── Modo 100% automático (comportamento original): uma tabela
+        # genérica GERDAU ou SIMEC por fornecedor, pra todos os itens.
+        adicionar_tabelas_auto(itens)
 
     tem_galv=dados.get('tem_galvanizacao',True)
     galv_cor=VERDE if tem_galv else C_ESC

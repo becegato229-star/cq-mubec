@@ -531,10 +531,12 @@ function adicionarBanho(){
   if(!notaAtual.banhos)notaAtual.banhos=[];
   notaAtual.banhos.push({fornecedor_galv:'JJ LESTE GALVANIZACAO LTDA',cnpj_galv:'26.412.069/0001-16',passivacao:'AZUL',camada:'8 MICRA'});
   document.getElementById('banhos-lista').innerHTML=renderBanhos(notaAtual.banhos);
+  atualizarResumo();
 }
 function removerBanho(idx){
   notaAtual.banhos.splice(idx,1);
   document.getElementById('banhos-lista').innerHTML=renderBanhos(notaAtual.banhos);
+  atualizarResumo();
 }
 function renderEditor(){
   const n=notaAtual;
@@ -561,7 +563,7 @@ function renderEditor(){
           <div class="field"><label>CNPJ do Cliente</label><input value="${n.cnpj_cliente||''}" onchange="notaAtual.cnpj_cliente=this.value"></div>
         </div>
         <div class="toggle-row" style="margin-top:14px">
-          <label class="toggle"><input type="checkbox" ${n.ocultar_cliente?'checked':''} onchange="notaAtual.ocultar_cliente=this.checked"><span class="slider"></span></label>
+          <label class="toggle"><input type="checkbox" ${n.ocultar_cliente?'checked':''} onchange="notaAtual.ocultar_cliente=this.checked;atualizarResumo()"><span class="slider"></span></label>
           <span class="toggle-lbl">Ocultar dados do cliente no certificado (pedido pontual)</span>
         </div>
       </div>
@@ -570,7 +572,7 @@ function renderEditor(){
       <div class="card-hdr"><div class="card-title">Itens da Nota</div><span style="font-size:12px;color:var(--400)">${n.itens.length} item(s)</span></div>
       <div class="card-body" style="padding-bottom:0">
         <div class="toggle-row" style="margin-bottom:10px">
-          <label class="toggle"><input type="checkbox" ${n.mostrar_specs!==false?'checked':''} onchange="notaAtual.mostrar_specs=this.checked"><span class="slider"></span></label>
+          <label class="toggle"><input type="checkbox" ${n.mostrar_specs!==false?'checked':''} onchange="notaAtual.mostrar_specs=this.checked;atualizarResumo()"><span class="slider"></span></label>
           <span class="toggle-lbl">Mostrar colunas Ø / Passo / Carga no certificado</span>
         </div>
       </div>
@@ -606,58 +608,119 @@ function renderEditor(){
         </div>
       </div>
     </div>
+    <div class="card" style="background:#fafafa">
+      <div class="card-body" id="resumo-box" style="padding:12px 16px"></div>
+    </div>
     <div class="actions">
       <button class="btn btn-ghost" onclick="resetNote()">↩ Resetar</button>
       <button class="btn btn-primary" id="btn-gerar" onclick="gerarPDF()">📄 Gerar Certificado PDF</button>
     </div>`;
+  atualizarResumo();
 }
-function renderCompSections(sections){
-  notaAtual.comp_sections=sections;
-  if(!sections.length)return '<div style="color:var(--400);font-size:12px;padding:6px 0">Nenhuma tabela manual — o certificado vai usar a composição genérica GERDAU/SIMEC automática pela bitola.</div>';
-  return sections.map((cs,i)=>`
-    <div style="border:1.5px solid var(--200);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;">
-      <button onclick="removerCompSection(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--400);font-size:16px;">×</button>
-      <div class="field" style="margin-bottom:8px"><label>Título da tabela</label>
-        <input value="${(cs.titulo||'').replace(/"/g,'&quot;')}" placeholder="COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — SUPORTE 3/8&quot; — GERDAU" onchange="atualizarCompSection(${i},'titulo',this.value)">
-      </div>
-      <div class="field" style="margin-bottom:8px"><label>Colunas (separadas por ; — termine com "HEAT NUMBER" se for incluir a corrida)</label>
-        <input value="${(cs.colsTxt||'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER').replace(/"/g,'&quot;')}" onchange="atualizarCompSection(${i},'colsTxt',this.value)">
-        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${renderColChips(i, cs.colsTxt||'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER')}</div>
-      </div>
-      <div class="field" style="margin-bottom:8px"><label>Valores da linha (mesma ordem das colunas, separados por ;)</label>
-        <input value="${(cs.rowTxt||'').replace(/"/g,'&quot;')}" placeholder="0,06; 0,45; 0,12; 0,017; 0,008; 0,01; 2815524133" onchange="atualizarCompSection(${i},'rowTxt',this.value)">
-      </div>
-      <div class="field"><label>Nota de rodapé (origem do certificado de matéria-prima)</label>
-        <input value="${(cs.nota||'').replace(/"/g,'&quot;')}" placeholder="Gerdau — Fio Máquina 9,00mm, grau 1006F, NF ... de .../2025." onchange="atualizarCompSection(${i},'nota',this.value)">
-      </div>
-    </div>`).join('');
+function atualizarResumo(){
+  const n=notaAtual;
+  const el=document.getElementById('resumo-box');
+  if(!el||!n)return;
+  const cliTxt=n.ocultar_cliente?'<b style="color:#b45309">oculto</b> no certificado':'visível';
+  const specsTxt=n.mostrar_specs!==false?'visíveis':'<b style="color:#b45309">ocultas</b>';
+  const secs=(n.comp_sections||[]).filter(cs=>Object.keys(cs.valores||{}).some(k=>(cs.valores[k]||'').toString().trim()!==''));
+  let compTxt;
+  if(!secs.length){
+    compTxt='100% automática (GERDAU/SIMEC pela bitola) para todos os itens';
+  }else{
+    const cobertos=new Set();
+    secs.forEach(cs=>(cs.itens||[]).forEach(i=>cobertos.add(i)));
+    const faltam=(n.itens||[]).length-cobertos.size;
+    compTxt=`${secs.length} tabela(s) manual(is) cobrindo ${cobertos.size} de ${(n.itens||[]).length} item(ns)`+(faltam>0?` — <b style="color:#b45309">os outros ${faltam} usam a composição automática</b>`:'');
+    if(cobertos.size===0)compTxt+=' — <b style="color:#b91c1c">nenhum item marcado ainda nas tabelas!</b>';
+  }
+  const galvTxt=n.tem_galvanizacao?`SIM — ${(n.banhos||[]).length} banho(s)`:'NÃO';
+  el.innerHTML=`<div style="font-size:12px;line-height:2;color:var(--600,#333)">
+    <b>Resumo do certificado</b><br>
+    Cliente: ${cliTxt} &nbsp;•&nbsp; Colunas técnicas (Ø/Passo/Carga): ${specsTxt}<br>
+    Composição química: ${compTxt}<br>
+    Galvanização: ${galvTxt}
+  </div>`;
 }
 const COMP_COL_CHIPS=['C','Mn','Si','P','S','Cu','Cr','Ni','Mo','Al','V','HEAT NUMBER'];
-function renderColChips(idx, colsTxt){
-  const atuais=(colsTxt||'').split(';').map(s=>s.trim().toUpperCase()).filter(Boolean);
-  return COMP_COL_CHIPS.map(c=>{
-    const label=c==='HEAT NUMBER'?'HEAT NUMBER':'%'+c;
-    const ativo=atuais.includes(label.toUpperCase());
-    const bg=ativo?'var(--brand,#0a8a5f)':'var(--100,#f2f2f2)';
-    const fg=ativo?'#fff':'var(--600,#333)';
-    return `<button type="button" onclick="toggleCompCol(${idx},'${c}')" style="border:none;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;background:${bg};color:${fg}">${label}</button>`;
-  }).join('');
+function renderCompSections(sections){
+  notaAtual.comp_sections=sections;
+  const itensNota=notaAtual.itens||[];
+  let body;
+  if(!sections.length){
+    body='<div style="color:var(--400);font-size:12px;padding:6px 0">Nenhuma tabela manual — o certificado vai usar a composição genérica GERDAU/SIMEC automática pela bitola, para todos os itens.</div>';
+  }else{
+    body=sections.map((cs,i)=>{
+      const valores=cs.valores||{};
+      const itensSel=cs.itens||[];
+      const chips=COMP_COL_CHIPS.map(c=>{
+        const label=c==='HEAT NUMBER'?'HEAT NUMBER':'%'+c;
+        const ativo=valores.hasOwnProperty(c);
+        const bg=ativo?'var(--brand,#0a8a5f)':'var(--100,#f2f2f2)';
+        const fg=ativo?'#fff':'var(--600,#333)';
+        return `<button type="button" onclick="toggleCompCol(${i},'${c}')" style="border:none;border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;background:${bg};color:${fg}">${label}</button>`;
+      }).join('');
+      const blocos=COMP_COL_CHIPS.filter(c=>valores.hasOwnProperty(c)).map(c=>{
+        const label=c==='HEAT NUMBER'?'HEAT NUMBER':'%'+c;
+        const w=c==='HEAT NUMBER'?'150px':'64px';
+        return `<div style="display:flex;flex-direction:column;gap:2px">
+          <label style="font-size:9px;color:var(--400);text-align:center">${label}</label>
+          <input value="${(valores[c]||'').replace(/"/g,'&quot;')}" oninput="atualizarCompValor(${i},'${c}',this.value)" style="width:${w};text-align:center;padding:5px 4px;font-size:12px">
+        </div>`;
+      }).join('');
+      const itemChecks=itensNota.map((it,ii)=>{
+        const marcado=itensSel.includes(ii);
+        return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;border:1px solid ${marcado?'var(--brand,#0a8a5f)':'var(--200)'};border-radius:6px;padding:3px 8px;margin:2px 4px 2px 0;cursor:pointer;${marcado?'background:#eefaf3':''}">
+          <input type="checkbox" ${marcado?'checked':''} onchange="toggleCompItem(${i},${ii})" style="margin:0">
+          <span>#${it.item} ${(it.codigo||'').replace(/"/g,'&quot;')}</span>
+        </label>`;
+      }).join('');
+      return `
+      <div style="border:1.5px solid var(--200);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;">
+        <button onclick="removerCompSection(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--400);font-size:16px;">×</button>
+        <div class="field" style="margin-bottom:8px"><label>Título da tabela</label>
+          <input value="${(cs.titulo||'').replace(/"/g,'&quot;')}" placeholder="COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — SUPORTE 3/8&quot; — GERDAU" onchange="atualizarCompSection(${i},'titulo',this.value)">
+        </div>
+        <div style="margin-bottom:6px">
+          <label style="font-size:11px;color:var(--400);display:block;margin-bottom:4px">Elementos (clique pra adicionar, o valor entra no bloquinho logo abaixo)</label>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">${chips}</div>
+          ${blocos?`<div style="display:flex;flex-wrap:wrap;gap:10px;background:#fafafa;border-radius:6px;padding:8px">${blocos}</div>`:'<div style="font-size:11px;color:var(--400)">Nenhum elemento selecionado ainda.</div>'}
+        </div>
+        <div style="margin:10px 0">
+          <label style="font-size:11px;color:var(--400);display:block;margin-bottom:4px">Aplica-se ao(s) item(ns) desta nota (os itens não marcados aqui, em nenhuma tabela, usam a composição automática)</label>
+          <div>${itemChecks||'<span style="font-size:11px;color:var(--400)">Nenhum item na nota.</span>'}</div>
+        </div>
+        <div class="field"><label>Nota de rodapé (origem do certificado de matéria-prima)</label>
+          <input value="${(cs.nota||'').replace(/"/g,'&quot;')}" placeholder="Gerdau — Fio Máquina 9,00mm, grau 1006F, NF ... de .../2025." onchange="atualizarCompSection(${i},'nota',this.value)">
+        </div>
+      </div>`;
+    }).join('');
+  }
+  const botoes=`<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+    <button class="btn btn-ghost" style="font-size:12px" onclick="adicionarCompSection()">+ Adicionar tabela de composição</button>
+    ${sections.length?'<button class="btn btn-ghost" style="font-size:12px" onclick="duplicarUltimaTabela()">🔁 Duplicar última tabela</button>':''}
+  </div>`;
+  return body+botoes;
 }
 function toggleCompCol(idx, col){
   const cs=notaAtual.comp_sections[idx];
-  const label=col==='HEAT NUMBER'?'HEAT NUMBER':'%'+col;
-  let cols=(cs.colsTxt||'').split(';').map(s=>s.trim()).filter(Boolean);
-  const existeIdx=cols.findIndex(c=>c.toUpperCase()===label.toUpperCase());
-  if(existeIdx>=0){
-    cols.splice(existeIdx,1);
-  }else if(label==='HEAT NUMBER'){
-    cols.push(label);
-  }else{
-    const hnIdx=cols.findIndex(c=>c.toUpperCase()==='HEAT NUMBER');
-    if(hnIdx>=0)cols.splice(hnIdx,0,label);else cols.push(label);
-  }
-  cs.colsTxt=cols.join('; ');
+  if(!cs.valores)cs.valores={};
+  if(cs.valores.hasOwnProperty(col))delete cs.valores[col];
+  else cs.valores[col]='';
   document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+  atualizarResumo();
+}
+function atualizarCompValor(idx, col, valor){
+  notaAtual.comp_sections[idx].valores[col]=valor;
+  atualizarResumo();
+}
+function toggleCompItem(idx, itemIdx){
+  const cs=notaAtual.comp_sections[idx];
+  if(!cs.itens)cs.itens=[];
+  const pos=cs.itens.indexOf(itemIdx);
+  if(pos>=0)cs.itens.splice(pos,1);else cs.itens.push(itemIdx);
+  document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+  atualizarResumo();
 }
 function atualizarCompSection(idx,campo,valor){
   if(!notaAtual.comp_sections[idx])notaAtual.comp_sections[idx]={};
@@ -665,16 +728,27 @@ function atualizarCompSection(idx,campo,valor){
 }
 function adicionarCompSection(){
   if(!notaAtual.comp_sections)notaAtual.comp_sections=[];
-  notaAtual.comp_sections.push({titulo:'',colsTxt:'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER',rowTxt:'',nota:''});
+  notaAtual.comp_sections.push({titulo:'',valores:{},nota:'',itens:[]});
   document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+  atualizarResumo();
+}
+function duplicarUltimaTabela(){
+  if(!notaAtual.comp_sections||!notaAtual.comp_sections.length)return;
+  const copia=JSON.parse(JSON.stringify(notaAtual.comp_sections[notaAtual.comp_sections.length-1]));
+  copia.itens=[];
+  notaAtual.comp_sections.push(copia);
+  document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+  atualizarResumo();
 }
 function removerCompSection(idx){
   notaAtual.comp_sections.splice(idx,1);
   document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+  atualizarResumo();
 }
 function toggleGalv(el){
   notaAtual.tem_galvanizacao=el.checked;
   document.getElementById('galv-fields').style.display=el.checked?'block':'none';
+  atualizarResumo();
 }
 function resetNote(){
   const orig=notas.find(n=>n.numero_nf===notaAtual.numero_nf);
@@ -682,12 +756,17 @@ function resetNote(){
 }
 function montarPayload(){
   const payload=JSON.parse(JSON.stringify(notaAtual));
-  const secs=(payload.comp_sections||[]).filter(cs=>(cs.colsTxt||'').trim()&&(cs.rowTxt||'').trim());
-  payload.comp_sections=secs.map(cs=>{
-    const cols=cs.colsTxt.split(';').map(s=>s.trim()).filter(Boolean);
-    const vals=cs.rowTxt.split(';').map(s=>s.trim());
-    return {titulo:cs.titulo||'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA',cols:cols,rows:[vals],nota:cs.nota||''};
+  const secsRaw=payload.comp_sections||[];
+  const secs=[];
+  secsRaw.forEach(cs=>{
+    const valores=cs.valores||{};
+    const colsAtivas=COMP_COL_CHIPS.filter(c=>valores.hasOwnProperty(c)&&(valores[c]||'').toString().trim()!=='');
+    if(!colsAtivas.length)return;
+    const cols=colsAtivas.map(c=>c==='HEAT NUMBER'?'HEAT NUMBER':'%'+c);
+    const vals=colsAtivas.map(c=>(valores[c]||'').toString().trim());
+    secs.push({titulo:cs.titulo||'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA',cols:cols,rows:[vals],nota:cs.nota||'',itens:cs.itens||[]});
   });
+  payload.comp_sections=secs;
   if(!payload.comp_sections.length)delete payload.comp_sections;
   return payload;
 }
