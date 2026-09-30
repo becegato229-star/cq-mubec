@@ -620,11 +620,11 @@ function renderCompSections(sections){
       <div class="field" style="margin-bottom:8px"><label>Título da tabela</label>
         <input value="${(cs.titulo||'').replace(/"/g,'&quot;')}" placeholder="COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — SUPORTE 3/8&quot; — GERDAU" onchange="atualizarCompSection(${i},'titulo',this.value)">
       </div>
-      <div class="field" style="margin-bottom:8px"><label>Colunas (separadas por vírgula — termine com "HEAT NUMBER" se for incluir a corrida)</label>
-        <input value="${(cs.colsTxt||'%C, %Mn, %Si, %P, %S, %Cu, HEAT NUMBER').replace(/"/g,'&quot;')}" onchange="atualizarCompSection(${i},'colsTxt',this.value)">
+      <div class="field" style="margin-bottom:8px"><label>Colunas (separadas por ; — termine com "HEAT NUMBER" se for incluir a corrida)</label>
+        <input value="${(cs.colsTxt||'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER').replace(/"/g,'&quot;')}" onchange="atualizarCompSection(${i},'colsTxt',this.value)">
       </div>
-      <div class="field" style="margin-bottom:8px"><label>Valores da linha (mesma ordem das colunas, separados por vírgula)</label>
-        <input value="${(cs.rowTxt||'').replace(/"/g,'&quot;')}" placeholder="0,06, 0,45, 0,12, 0,017, 0,008, 0,01, 2815524133" onchange="atualizarCompSection(${i},'rowTxt',this.value)">
+      <div class="field" style="margin-bottom:8px"><label>Valores da linha (mesma ordem das colunas, separados por ;)</label>
+        <input value="${(cs.rowTxt||'').replace(/"/g,'&quot;')}" placeholder="0,06; 0,45; 0,12; 0,017; 0,008; 0,01; 2815524133" onchange="atualizarCompSection(${i},'rowTxt',this.value)">
       </div>
       <div class="field"><label>Nota de rodapé (origem do certificado de matéria-prima)</label>
         <input value="${(cs.nota||'').replace(/"/g,'&quot;')}" placeholder="Gerdau — Fio Máquina 9,00mm, grau 1006F, NF ... de .../2025." onchange="atualizarCompSection(${i},'nota',this.value)">
@@ -637,7 +637,7 @@ function atualizarCompSection(idx,campo,valor){
 }
 function adicionarCompSection(){
   if(!notaAtual.comp_sections)notaAtual.comp_sections=[];
-  notaAtual.comp_sections.push({titulo:'',colsTxt:'%C, %Mn, %Si, %P, %S, %Cu, HEAT NUMBER',rowTxt:'',nota:''});
+  notaAtual.comp_sections.push({titulo:'',colsTxt:'%C; %Mn; %Si; %P; %S; %Cu; HEAT NUMBER',rowTxt:'',nota:''});
   document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
 }
 function removerCompSection(idx){
@@ -656,8 +656,8 @@ function montarPayload(){
   const payload=JSON.parse(JSON.stringify(notaAtual));
   const secs=(payload.comp_sections||[]).filter(cs=>(cs.colsTxt||'').trim()&&(cs.rowTxt||'').trim());
   payload.comp_sections=secs.map(cs=>{
-    const cols=cs.colsTxt.split(',').map(s=>s.trim()).filter(Boolean);
-    const vals=cs.rowTxt.split(',').map(s=>s.trim());
+    const cols=cs.colsTxt.split(';').map(s=>s.trim()).filter(Boolean);
+    const vals=cs.rowTxt.split(';').map(s=>s.trim());
     return {titulo:cs.titulo||'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA',cols:cols,rows:[vals],nota:cs.nota||''};
   });
   if(!payload.comp_sections.length)delete payload.comp_sections;
