@@ -127,6 +127,60 @@ def ler_excel_bytes(raw_bytes, filename=''):
         return pd.read_excel(os.path.join(tmpdir,'input.xlsx'), engine='openpyxl')
 
 
+FORNECEDOR_GALV_PADRAO = 'JJ LESTE GALVANIZACAO LTDA'
+CNPJ_GALV_PADRAO = '26.412.069/0001-16'
+CAMADA_PADRAO = '8 MICRA'
+
+def detectar_passivacao(descricao):
+    """Regra de negócio MUBEC: passivação pelo sufixo no nome do item.
+    GE -> AZUL | BICRO -> AMARELO | GF -> GALVANIZAÇÃO À FOGO | NAT/INOX -> sem galvanização."""
+    d = (descricao or '').upper()
+    tokens = d.split()
+    if 'GE' in tokens:
+        return 'AZUL'
+    if 'BICRO' in tokens:
+        return 'AMARELO'
+    if 'GF' in tokens:
+        return 'GALVANIZAÇÃO À FOGO'
+    if 'NAT' in tokens or 'INOX' in tokens:
+        return None
+    return None
+
+
+def detectar_camada(descricao):
+    """Camada padrão é sempre 8 MICRA, a menos que a descrição do item
+    especifique outra explicitamente (ex: '...16 MICRA' no nome)."""
+    d = (descricao or '').upper()
+    for cand in ('16 MICRA', '13 MICRA', '8 MICRA'):
+        if cand in d:
+            return cand
+    return CAMADA_PADRAO
+
+
+def sugerir_banhos(itens):
+    """A partir dos itens de uma nota, monta a lista de banhos (um por tipo
+    de passivação distinto encontrado) já com a regra de negócio aplicada,
+    em vez do antigo placeholder fixo AMARELO/16 MICRA."""
+    vistos = {}
+    ordem = []
+    for it in itens:
+        passy = detectar_passivacao(it.get('descricao', ''))
+        if not passy:
+            continue
+        camada = detectar_camada(it.get('descricao', ''))
+        chave = (passy, camada)
+        if chave not in vistos:
+            vistos[chave] = True
+            ordem.append({
+                'fornecedor_galv': FORNECEDOR_GALV_PADRAO,
+                'cnpj_galv': CNPJ_GALV_PADRAO,
+                'passivacao': passy,
+                'camada': camada,
+            })
+    tem_galv = len(ordem) > 0
+    return tem_galv, ordem
+
+
 def parse_erp_df(df):
     df.columns = [str(c).strip() for c in df.columns]
     COL_NF    = 'Nº Nota Fiscal'
@@ -166,10 +220,8 @@ def parse_erp_df(df):
                 'cod_cliente': cli_cod, 'nome_cliente': cli_nome,
                 'cnpj_cliente': cli_cnpj, 'telefone_cliente': cli_tel,
                 'itens': [],
-                'tem_galvanizacao': True,
-                'fornecedor_galv': 'JJ LESTE GALVANIZACAO LTDA',
-                'cnpj_galv': '26.412.069/0001-16',
-                'passivacao': 'AMARELO', 'camada': '16 MICRA',
+                'ocultar_cliente': False,
+                'mostrar_specs': True,
             }
 
         # Código do produto (alternativo)
@@ -219,6 +271,13 @@ def parse_erp_df(df):
             'fpp':       fpp,
             'carga':     carga,
         })
+
+    # Aplica a regra de negócio de passivação/camada (GE/BICRO/GF/NAT/INOX)
+    # com base nos itens reais de cada nota, em vez de um valor fixo.
+    for n in notas.values():
+        tem_galv, banhos = sugerir_banhos(n['itens'])
+        n['tem_galvanizacao'] = tem_galv
+        n['banhos'] = banhos
 
     # Remove notas sem itens válidos
     return [n for n in notas.values() if n['itens']]
@@ -425,7 +484,7 @@ function selectNote(nf){
   const idx=notasFiltradas.findIndex(n=>n.numero_nf===nf);
   document.getElementById(`card-${idx}`)?.classList.add('active');
   notaAtual=JSON.parse(JSON.stringify(notasFiltradas[idx]));
-  if(!notaAtual.banhos)notaAtual.banhos=[{fornecedor_galv:notaAtual.fornecedor_galv||'',cnpj_galv:notaAtual.cnpj_galv||'',passivacao:notaAtual.passivacao||'AMARELO',camada:notaAtual.camada||'16 MICRA'}];
+  if(!notaAtual.banhos)notaAtual.banhos=[];
   renderEditor();
 }
 function renderBanhos(banhos){
@@ -470,7 +529,7 @@ function atualizarBanho(idx,campo,valor){
 }
 function adicionarBanho(){
   if(!notaAtual.banhos)notaAtual.banhos=[];
-  notaAtual.banhos.push({fornecedor_galv:'JJ LESTE GALVANIZACAO LTDA',cnpj_galv:'26.412.069/0001-16',passivacao:'AMARELO',camada:'16 MICRA'});
+  notaAtual.banhos.push({fornecedor_galv:'JJ LESTE GALVANIZACAO LTDA',cnpj_galv:'26.412.069/0001-16',passivacao:'AZUL',camada:'8 MICRA'});
   document.getElementById('banhos-lista').innerHTML=renderBanhos(notaAtual.banhos);
 }
 function removerBanho(idx){
@@ -501,15 +560,35 @@ function renderEditor(){
           <div class="field full"><label>Nome do Cliente</label><input value="${(n.nome_cliente||'').replace(/"/g,'&quot;')}" onchange="notaAtual.nome_cliente=this.value"></div>
           <div class="field"><label>CNPJ do Cliente</label><input value="${n.cnpj_cliente||''}" onchange="notaAtual.cnpj_cliente=this.value"></div>
         </div>
+        <div class="toggle-row" style="margin-top:14px">
+          <label class="toggle"><input type="checkbox" ${n.ocultar_cliente?'checked':''} onchange="notaAtual.ocultar_cliente=this.checked"><span class="slider"></span></label>
+          <span class="toggle-lbl">Ocultar dados do cliente no certificado (pedido pontual)</span>
+        </div>
       </div>
     </div>
     <div class="card">
       <div class="card-hdr"><div class="card-title">Itens da Nota</div><span style="font-size:12px;color:var(--400)">${n.itens.length} item(s)</span></div>
+      <div class="card-body" style="padding-bottom:0">
+        <div class="toggle-row" style="margin-bottom:10px">
+          <label class="toggle"><input type="checkbox" ${n.mostrar_specs!==false?'checked':''} onchange="notaAtual.mostrar_specs=this.checked"><span class="slider"></span></label>
+          <span class="toggle-lbl">Mostrar colunas Ø / Passo / Carga no certificado</span>
+        </div>
+      </div>
       <div style="overflow-x:auto">
         <table class="items-table">
           <thead><tr><th>#</th><th>Código</th><th>Qtd</th><th>Und</th><th>Descrição</th><th>Ø mm</th><th>Passo</th><th>Carga KGF</th></tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-title">Composição Química da Matéria-Prima</div>
+        <span style="font-size:11px;color:var(--400)">deixe em branco para usar a composição genérica automática</span>
+      </div>
+      <div class="card-body">
+        <div id="comp-lista">${renderCompSections(n.comp_sections||[])}</div>
+        <button class="btn btn-ghost" style="margin-top:6px;font-size:12px" onclick="adicionarCompSection()">+ Adicionar tabela de composição (com Heat Number)</button>
       </div>
     </div>
     <div class="card">
@@ -522,7 +601,7 @@ function renderEditor(){
           </div>
         </div>
         <div id="galv-fields" style="display:${n.tem_galvanizacao?'block':'none'}">
-          <div id="banhos-lista">${renderBanhos(n.banhos||[{fornecedor_galv:'JJ LESTE GALVANIZACAO LTDA',cnpj_galv:'26.412.069/0001-16',passivacao:'AMARELO',camada:'16 MICRA'}])}</div>
+          <div id="banhos-lista">${renderBanhos(n.banhos&&n.banhos.length?n.banhos:[{fornecedor_galv:'JJ LESTE GALVANIZACAO LTDA',cnpj_galv:'26.412.069/0001-16',passivacao:'AZUL',camada:'8 MICRA'}])}</div>
           <button class="btn btn-ghost" style="margin-top:10px;font-size:12px" onclick="adicionarBanho()">+ Adicionar banho</button>
         </div>
       </div>
@@ -532,6 +611,39 @@ function renderEditor(){
       <button class="btn btn-primary" id="btn-gerar" onclick="gerarPDF()">📄 Gerar Certificado PDF</button>
     </div>`;
 }
+function renderCompSections(sections){
+  notaAtual.comp_sections=sections;
+  if(!sections.length)return '<div style="color:var(--400);font-size:12px;padding:6px 0">Nenhuma tabela manual — o certificado vai usar a composição genérica GERDAU/SIMEC automática pela bitola.</div>';
+  return sections.map((cs,i)=>`
+    <div style="border:1.5px solid var(--200);border-radius:8px;padding:12px;margin-bottom:10px;position:relative;">
+      <button onclick="removerCompSection(${i})" style="position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--400);font-size:16px;">×</button>
+      <div class="field" style="margin-bottom:8px"><label>Título da tabela</label>
+        <input value="${(cs.titulo||'').replace(/"/g,'&quot;')}" placeholder="COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — SUPORTE 3/8&quot; — GERDAU" onchange="atualizarCompSection(${i},'titulo',this.value)">
+      </div>
+      <div class="field" style="margin-bottom:8px"><label>Colunas (separadas por vírgula — termine com "HEAT NUMBER" se for incluir a corrida)</label>
+        <input value="${(cs.colsTxt||'%C, %Mn, %Si, %P, %S, %Cu, HEAT NUMBER').replace(/"/g,'&quot;')}" onchange="atualizarCompSection(${i},'colsTxt',this.value)">
+      </div>
+      <div class="field" style="margin-bottom:8px"><label>Valores da linha (mesma ordem das colunas, separados por vírgula)</label>
+        <input value="${(cs.rowTxt||'').replace(/"/g,'&quot;')}" placeholder="0,06, 0,45, 0,12, 0,017, 0,008, 0,01, 2815524133" onchange="atualizarCompSection(${i},'rowTxt',this.value)">
+      </div>
+      <div class="field"><label>Nota de rodapé (origem do certificado de matéria-prima)</label>
+        <input value="${(cs.nota||'').replace(/"/g,'&quot;')}" placeholder="Gerdau — Fio Máquina 9,00mm, grau 1006F, NF ... de .../2025." onchange="atualizarCompSection(${i},'nota',this.value)">
+      </div>
+    </div>`).join('');
+}
+function atualizarCompSection(idx,campo,valor){
+  if(!notaAtual.comp_sections[idx])notaAtual.comp_sections[idx]={};
+  notaAtual.comp_sections[idx][campo]=valor;
+}
+function adicionarCompSection(){
+  if(!notaAtual.comp_sections)notaAtual.comp_sections=[];
+  notaAtual.comp_sections.push({titulo:'',colsTxt:'%C, %Mn, %Si, %P, %S, %Cu, HEAT NUMBER',rowTxt:'',nota:''});
+  document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+}
+function removerCompSection(idx){
+  notaAtual.comp_sections.splice(idx,1);
+  document.getElementById('comp-lista').innerHTML=renderCompSections(notaAtual.comp_sections);
+}
 function toggleGalv(el){
   notaAtual.tem_galvanizacao=el.checked;
   document.getElementById('galv-fields').style.display=el.checked?'block':'none';
@@ -540,11 +652,22 @@ function resetNote(){
   const orig=notas.find(n=>n.numero_nf===notaAtual.numero_nf);
   if(orig){notaAtual=JSON.parse(JSON.stringify(orig));renderEditor();}
 }
+function montarPayload(){
+  const payload=JSON.parse(JSON.stringify(notaAtual));
+  const secs=(payload.comp_sections||[]).filter(cs=>(cs.colsTxt||'').trim()&&(cs.rowTxt||'').trim());
+  payload.comp_sections=secs.map(cs=>{
+    const cols=cs.colsTxt.split(',').map(s=>s.trim()).filter(Boolean);
+    const vals=cs.rowTxt.split(',').map(s=>s.trim());
+    return {titulo:cs.titulo||'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA',cols:cols,rows:[vals],nota:cs.nota||''};
+  });
+  if(!payload.comp_sections.length)delete payload.comp_sections;
+  return payload;
+}
 async function gerarPDF(){
   const btn=document.getElementById('btn-gerar');
   btn.disabled=true;btn.innerHTML='<div class="spinner"></div> Gerando...';
   try{
-    const res=await fetch('/gerar-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notaAtual)});
+    const res=await fetch('/gerar-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(montarPayload())});
     if(!res.ok){const e=await res.json();toast(e.error||'Erro ao gerar PDF','err');}
     else{
       const blob=await res.blob();

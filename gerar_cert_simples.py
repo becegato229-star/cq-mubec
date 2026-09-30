@@ -93,6 +93,9 @@ def gerar(dados):
     buf=io.BytesIO(); W=A4[0]-50*mm
     doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=30*mm,rightMargin=20*mm,topMargin=30*mm,bottomMargin=20*mm)
     ROW_H=7*mm; story=[]
+    ocultar_cliente = bool(dados.get('ocultar_cliente', False))
+    mostrar_specs = dados.get('mostrar_specs', True)
+    mostrar_specs = True if mostrar_specs in (True, 'true', 'True', 1, '1') else False if mostrar_specs in (False, 'false', 'False', 0, '0') else True
     logo_w=52*mm; cert_w=50*mm; info_w=W-logo_w-cert_w
     logo=Image(LOGO_PATH,width=logo_w,height=logo_w*(533/2000))
     info_rows=[[Paragraph('<b>MUBEC IND. E COM. LTDA.</b>',ps(fontSize=9,fontName='Helvetica-Bold',textColor=PRETO))],
@@ -106,22 +109,32 @@ def gerar(dados):
     story.append(tbl_hdr); story.append(Spacer(1,3*mm))
     story.append(HRFlowable(width='100%',thickness=2.5,color=VERDE)); story.append(Spacer(1,3*mm))
 
-    c1,c2,c3=W*0.50,W*0.30,W*0.20
-    bloco_cli=Table([[lbl('CLIENTE'),lbl('CNPJ'),lbl('TELEFONE')],[val(dados['nome_cliente'],size=8),val(dados['cnpj_cliente']),val(dados['telefone_cliente'])]],colWidths=[c1,c2,c3],rowHeights=[5*mm,ROW_H])
-    bloco_cli.setStyle(TableStyle([('BOX',(0,0),(-1,-1),0.5,C_BOR),('LINEBEFORE',(1,0),(1,-1),0.5,C_BOR),('LINEBEFORE',(2,0),(2,-1),0.5,C_BOR),('BACKGROUND',(0,0),(-1,-1),C_CLA),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-    story.append(KeepTogether(bloco_cli)); story.append(Spacer(1,1.5*mm))
+    if not ocultar_cliente:
+        c1,c2,c3=W*0.50,W*0.30,W*0.20
+        bloco_cli=Table([[lbl('CLIENTE'),lbl('CNPJ'),lbl('TELEFONE')],[val(dados['nome_cliente'],size=8),val(dados['cnpj_cliente']),val(dados['telefone_cliente'])]],colWidths=[c1,c2,c3],rowHeights=[5*mm,ROW_H])
+        bloco_cli.setStyle(TableStyle([('BOX',(0,0),(-1,-1),0.5,C_BOR),('LINEBEFORE',(1,0),(1,-1),0.5,C_BOR),('LINEBEFORE',(2,0),(2,-1),0.5,C_BOR),('BACKGROUND',(0,0),(-1,-1),C_CLA),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+        story.append(KeepTogether(bloco_cli)); story.append(Spacer(1,1.5*mm))
 
     n1,n2,n3=W*0.30,W*0.30,W*0.40
     bloco_nf=Table([[lbl('NOTA FISCAL Nº'),lbl('DATA DE EMISSÃO'),Paragraph('',ps())],[val(dados['numero_nf'],bold=True),val(dados['data_emissao'],bold=True),Paragraph('',ps())]],colWidths=[n1,n2,n3],rowHeights=[5*mm,ROW_H])
     bloco_nf.setStyle(TableStyle([('BOX',(0,0),(1,-1),0.5,C_BOR),('LINEBEFORE',(1,0),(1,-1),0.5,C_BOR),('BACKGROUND',(0,0),(1,-1),C_CLA),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(KeepTogether(bloco_nf)); story.append(Spacer(1,3*mm))
 
-    cw_it=[10*mm,18*mm,14*mm,11*mm,W-113*mm,20*mm,18*mm,22*mm]
+    if mostrar_specs:
+        cw_it=[10*mm,18*mm,14*mm,11*mm,W-113*mm,20*mm,18*mm,22*mm]
+    else:
+        cw_it=[10*mm,18*mm,14*mm,11*mm,W-53*mm]
     itens=dados['itens']
     def build_items_wrap(titulo,subset):
-        rows=[[hdr('ITEM'),hdr('CÓDIGO'),hdr('QUANT.'),hdr('UNID.'),hdr('DESCRIÇÃO'),hdr('Ø (mm)'),hdr('PASSO/FPP'),hdr('CARGA (KGF)')]]
+        if mostrar_specs:
+            rows=[[hdr('ITEM'),hdr('CÓDIGO'),hdr('QUANT.'),hdr('UNID.'),hdr('DESCRIÇÃO'),hdr('Ø (mm)'),hdr('PASSO/FPP'),hdr('CARGA (KGF)')]]
+        else:
+            rows=[[hdr('ITEM'),hdr('CÓDIGO'),hdr('QUANT.'),hdr('UNID.'),hdr('DESCRIÇÃO')]]
         for it in subset:
-            rows.append([cell(it['item']),cell(it['codigo']),cell(fmt(it['qtd'])),cell(it['unid']),cell(it['descricao'],size=7.5,align=TA_LEFT),cell(fmt(it['fm'])),cell(fmt(it['fpp'])),cell(fmt(it['carga']))])
+            row=[cell(it['item']),cell(it['codigo']),cell(fmt(it['qtd'])),cell(it['unid']),cell(it['descricao'],size=7.5,align=TA_LEFT if mostrar_specs else TA_CENTER)]
+            if mostrar_specs:
+                row+=[cell(fmt(it['fm'])),cell(fmt(it['fpp'])),cell(fmt(it['carga']))]
+            rows.append(row)
         rh=[8*mm]+[ROW_H]*len(subset)
         rbg=[('BACKGROUND',(0,i),(-1,i),C_CLA if i%2==0 else BRAN) for i in range(1,len(subset)+1)]
         tbl=Table(rows,colWidths=cw_it,rowHeights=rh,repeatRows=1)
@@ -137,34 +150,67 @@ def gerar(dados):
         story.append(KeepTogether(build_items_wrap('ITENS DA NOTA FISCAL',itens)))
     story.append(Spacer(1,3*mm))
 
-    comps_usadas = {}
-    for it in itens:
-        fm = it.get('fm','')
-        if not fm: continue
-        comp = get_comp_por_bitola(fm)
-        if comp:
-            comps_usadas[comp['fornecedor']] = comp
-
-    def build_comp(comp):
-        n=len(comp['cols']); cw=[W/n]*n
-        t=Table([[Paragraph(f'<b>{c}</b>',ps(fontSize=7,fontName='Helvetica-Bold',textColor=BRAN,alignment=TA_CENTER)) for c in comp['cols']],
-                 [Paragraph(f'<b>{v}</b>',ps(fontSize=8,fontName='Helvetica-Bold',textColor=PRETO,alignment=TA_CENTER)) for v in comp['vals']]],
-                colWidths=cw,rowHeights=[6.5*mm,ROW_H])
-        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),C_ESC),('BACKGROUND',(0,1),(-1,1),C_CLA),('BOX',(0,0),(-1,-1),0.5,C_BOR),('INNERGRID',(0,0),(-1,-1),0.3,C_BOR),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('LEFTPADDING',(0,0),(-1,-1),1),('RIGHTPADDING',(0,0),(-1,-1),1),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEABOVE',(0,0),(-1,0),1,VERDE)]))
-        return t
-
     def build_wrap_comp(titulo,tbl,nota):
         w=Table([[sec(titulo)],[tbl],[Paragraph(nota,ps(fontSize=6.5,textColor=C_MED,alignment=TA_RIGHT,fontName='Helvetica-Oblique'))]],colWidths=[W])
         w.setStyle(TableStyle([('BACKGROUND',(0,0),(0,0),C_ESC),('TOPPADDING',(0,0),(0,0),4),('BOTTOMPADDING',(0,0),(0,0),4),('TOPPADDING',(0,1),(0,1),0),('BOTTOMPADDING',(0,1),(0,1),0),('TOPPADDING',(0,2),(0,2),2),('BOTTOMPADDING',(0,2),(0,2),0),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
         return w
 
-    ordem = ['GERDAU','SIMEC']
-    for forn in ordem:
-        if forn in comps_usadas:
-            comp = comps_usadas[forn]
-            titulo = f'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — {forn}'
-            story.append(KeepTogether(build_wrap_comp(titulo, build_comp(comp), comp['nota'])))
+    comp_sections = dados.get('comp_sections')
+    if comp_sections:
+        # ── Modo manual: uma ou mais tabelas (uma por item/fornecedor), cada
+        # uma com colunas e valores livres, e HEAT NUMBER opcional por linha.
+        for cs in comp_sections:
+            cols = list(cs.get('cols', []))
+            rows_vals = cs.get('rows', [])
+            if not cols or not rows_vals:
+                continue
+            tem_heat = cs.get('tem_heat_number', cols and cols[-1].strip().upper() == 'HEAT NUMBER')
+            n = len(cols)
+            if tem_heat:
+                heat_w = 26*mm
+                other_w = (W - heat_w) / max(n - 1, 1)
+                cw = [other_w]*(n-1) + [heat_w]
+            else:
+                cw = [W/n]*n
+            header_row = [Paragraph(f'<b>{c}</b>',ps(fontSize=6.5,fontName='Helvetica-Bold',textColor=BRAN,alignment=TA_CENTER)) for c in cols]
+            data_rows = [[Paragraph(f'<b>{v}</b>',ps(fontSize=7.5,fontName='Helvetica-Bold',textColor=PRETO,alignment=TA_CENTER)) for v in vals] for vals in rows_vals]
+            t = Table([header_row]+data_rows, colWidths=cw, rowHeights=[6.5*mm]+[7*mm]*len(data_rows))
+            style=[('BACKGROUND',(0,0),(-1,0),C_ESC),('BOX',(0,0),(-1,-1),0.5,C_BOR),('INNERGRID',(0,0),(-1,-1),0.3,C_BOR),
+                   ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('LEFTPADDING',(0,0),(-1,-1),1),
+                   ('RIGHTPADDING',(0,0),(-1,-1),1),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEABOVE',(0,0),(-1,0),1,VERDE)]
+            for i in range(1,len(data_rows)+1):
+                style.append(('BACKGROUND',(0,i),(-1,i),C_CLA if i%2==1 else BRAN))
+            t.setStyle(TableStyle(style))
+            titulo = cs.get('titulo') or 'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA'
+            nota = cs.get('nota','')
+            story.append(KeepTogether(build_wrap_comp(titulo, t, nota)))
             story.append(Spacer(1,3*mm))
+    else:
+        # ── Modo automático (comportamento original): uma tabela genérica
+        # GERDAU ou SIMEC por fornecedor detectado pela bitola dos itens.
+        comps_usadas = {}
+        for it in itens:
+            fm = it.get('fm','')
+            if not fm: continue
+            comp = get_comp_por_bitola(fm)
+            if comp:
+                comps_usadas[comp['fornecedor']] = comp
+
+        def build_comp(comp):
+            n=len(comp['cols']); cw=[W/n]*n
+            t=Table([[Paragraph(f'<b>{c}</b>',ps(fontSize=7,fontName='Helvetica-Bold',textColor=BRAN,alignment=TA_CENTER)) for c in comp['cols']],
+                     [Paragraph(f'<b>{v}</b>',ps(fontSize=8,fontName='Helvetica-Bold',textColor=PRETO,alignment=TA_CENTER)) for v in comp['vals']]],
+                    colWidths=cw,rowHeights=[6.5*mm,ROW_H])
+            t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),C_ESC),('BACKGROUND',(0,1),(-1,1),C_CLA),('BOX',(0,0),(-1,-1),0.5,C_BOR),('INNERGRID',(0,0),(-1,-1),0.3,C_BOR),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),('LEFTPADDING',(0,0),(-1,-1),1),('RIGHTPADDING',(0,0),(-1,-1),1),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEABOVE',(0,0),(-1,0),1,VERDE)]))
+            return t
+
+        ordem = ['GERDAU','SIMEC']
+        for forn in ordem:
+            if forn in comps_usadas:
+                comp = comps_usadas[forn]
+                titulo = f'COMPOSIÇÃO QUÍMICA DA MATÉRIA-PRIMA — {forn}'
+                story.append(KeepTogether(build_wrap_comp(titulo, build_comp(comp), comp['nota'])))
+                story.append(Spacer(1,3*mm))
 
     tem_galv=dados.get('tem_galvanizacao',True)
     galv_cor=VERDE if tem_galv else C_ESC
